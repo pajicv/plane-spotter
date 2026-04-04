@@ -1,0 +1,972 @@
+<!DOCTYPE html>
+<html lang="sr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Flight AR</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Rajdhani:wght@300;500;700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --green: #00ff9d;
+    --amber: #ffb800;
+    --red: #ff3c3c;
+    --dim: rgba(0,255,157,0.15);
+    --bg: #030a08;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--green);
+    font-family: 'Space Mono', monospace;
+    overflow: hidden;
+    height: 100dvh;
+    width: 100vw;
+    touch-action: none;
+  }
+
+  #camera-view {
+    position: fixed; inset: 0;
+    object-fit: cover;
+    width: 100%; height: 100%;
+    z-index: 0;
+    opacity: 0.85;
+  }
+
+  #overlay {
+    position: fixed; inset: 0;
+    z-index: 10;
+    pointer-events: none;
+  }
+
+  /* Crosshair */
+  #crosshair {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 60px; height: 60px;
+  }
+  #crosshair::before, #crosshair::after {
+    content: '';
+    position: absolute;
+    background: var(--green);
+    opacity: 0.7;
+  }
+  #crosshair::before { width: 1px; height: 100%; left: 50%; top: 0; }
+  #crosshair::after  { height: 1px; width: 100%; top: 50%; left: 0; }
+  .ch-corner {
+    position: absolute;
+    width: 10px; height: 10px;
+    border-color: var(--green);
+    border-style: solid;
+    opacity: 0.9;
+  }
+  .ch-tl { top: 0; left: 0; border-width: 2px 0 0 2px; }
+  .ch-tr { top: 0; right: 0; border-width: 2px 2px 0 0; }
+  .ch-bl { bottom: 0; left: 0; border-width: 0 0 2px 2px; }
+  .ch-br { bottom: 0; right: 0; border-width: 0 2px 2px 0; }
+
+  /* HUD top bar */
+  #hud-top {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    padding: 12px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    background: linear-gradient(to bottom, rgba(0,0,0,0.7), transparent);
+  }
+  #hud-title {
+    font-family: 'Rajdhani', sans-serif;
+    font-weight: 700;
+    font-size: 18px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: var(--green);
+  }
+  #hud-status {
+    font-size: 9px;
+    text-align: right;
+    line-height: 1.8;
+    color: rgba(0,255,157,0.6);
+  }
+  #hud-status span { color: var(--green); }
+
+  /* Compass bar */
+  #compass-wrap {
+    position: absolute;
+    top: 60px; left: 50%;
+    transform: translateX(-50%);
+    width: 280px;
+    overflow: hidden;
+    height: 28px;
+  }
+  #compass-tape {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    font-size: 10px;
+    font-family: 'Space Mono', monospace;
+    color: rgba(0,255,157,0.5);
+    line-height: 28px;
+    letter-spacing: 1px;
+  }
+  #compass-tape .major { color: var(--green); font-weight: 700; }
+  #compass-center-marker {
+    position: absolute;
+    left: 50%; transform: translateX(-50%);
+    bottom: 0;
+    width: 0; height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-bottom: 6px solid var(--green);
+  }
+  #azimuth-readout {
+    position: absolute;
+    top: 92px; left: 50%;
+    transform: translateX(-50%);
+    font-size: 11px;
+    color: var(--green);
+    letter-spacing: 2px;
+  }
+
+  /* Horizon line */
+  #horizon {
+    position: absolute;
+    left: 0; right: 0;
+    height: 1px;
+    background: rgba(0,255,157,0.25);
+    top: 50%;
+    pointer-events: none;
+    transition: top 0.15s ease-out;
+  }
+  #horizon::before {
+    content: 'HORIZON';
+    position: absolute;
+    right: 12px;
+    top: 3px;
+    font-size: 8px;
+    color: rgba(0,255,157,0.35);
+    letter-spacing: 2px;
+  }
+
+  /* Elevation scale */
+  #elev-scale {
+    position: absolute;
+    right: 16px;
+    top: 20%; bottom: 20%;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: flex-end;
+    font-size: 8px;
+    color: rgba(0,255,157,0.4);
+  }
+  #elev-scale div { border-right: 2px solid rgba(0,255,157,0.3); padding-right: 4px; }
+
+  /* Bottom info bar */
+  #hud-bottom {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    padding: 12px 16px 24px;
+    background: linear-gradient(to top, rgba(0,0,0,0.75), transparent);
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 8px;
+  }
+  .metric {
+    display: flex; flex-direction: column;
+    gap: 2px;
+  }
+  .metric-label {
+    font-size: 8px;
+    color: rgba(0,255,157,0.5);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+  .metric-value {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--green);
+    line-height: 1;
+  }
+
+  /* Scan line effect */
+  #scanlines {
+    position: fixed; inset: 0;
+    z-index: 5;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.03) 2px,
+      rgba(0,0,0,0.03) 4px
+    );
+  }
+
+  /* Vignette */
+  #vignette {
+    position: fixed; inset: 0;
+    z-index: 6;
+    pointer-events: none;
+    background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.6) 100%);
+  }
+
+  /* Flight labels */
+  .flight-label {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    pointer-events: auto;
+    z-index: 20;
+    transition: left 0.15s ease-out, top 0.15s ease-out;
+    cursor: pointer;
+  }
+  .flight-label.selected .flight-card {
+    border-color: var(--amber);
+    box-shadow: 0 0 12px rgba(255,184,0,0.3);
+  }
+
+  .flight-dot {
+    width: 10px; height: 10px;
+    background: var(--amber);
+    border-radius: 50%;
+    margin: 0 auto;
+    box-shadow: 0 0 8px var(--amber), 0 0 20px rgba(255,184,0,0.4);
+    animation: pulse 2s infinite;
+  }
+  .flight-dot.close { background: var(--red); box-shadow: 0 0 8px var(--red), 0 0 20px rgba(255,60,60,0.4); }
+  .flight-dot.far { background: rgba(0,255,157,0.7); box-shadow: 0 0 6px rgba(0,255,157,0.5); }
+
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.4); opacity: 0.7; }
+  }
+
+  .flight-card {
+    margin-top: 8px;
+    background: rgba(0,10,6,0.85);
+    border: 1px solid rgba(0,255,157,0.4);
+    padding: 6px 9px;
+    min-width: 110px;
+    backdrop-filter: blur(4px);
+    clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 0 100%);
+  }
+  .flight-callsign {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--amber);
+    letter-spacing: 1px;
+    line-height: 1;
+  }
+  .flight-info {
+    font-size: 8px;
+    color: rgba(0,255,157,0.6);
+    margin-top: 3px;
+    line-height: 1.6;
+  }
+  .flight-info b { color: var(--green); }
+
+  /* Angle delta indicator */
+  .flight-delta {
+    font-size: 9px;
+    text-align: center;
+    margin-top: 3px;
+    color: rgba(255,255,255,0.4);
+  }
+  .flight-delta.near { color: var(--amber); }
+
+  /* Loading / permission screens */
+  #screen-perm, #screen-loading {
+    position: fixed; inset: 0;
+    z-index: 100;
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+    padding: 32px;
+    text-align: center;
+  }
+  .screen-icon {
+    font-size: 48px;
+    filter: drop-shadow(0 0 20px var(--green));
+  }
+  .screen-title {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: 4px;
+    color: var(--green);
+  }
+  .screen-body {
+    font-size: 11px;
+    line-height: 1.9;
+    color: rgba(0,255,157,0.6);
+    max-width: 280px;
+  }
+  .btn {
+    background: transparent;
+    border: 1px solid var(--green);
+    color: var(--green);
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    padding: 12px 28px;
+    letter-spacing: 3px;
+    cursor: pointer;
+    transition: all 0.2s;
+    clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%);
+  }
+  .btn:active { background: var(--dim); }
+
+  .spinner {
+    width: 40px; height: 40px;
+    border: 2px solid rgba(0,255,157,0.2);
+    border-top: 2px solid var(--green);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  #screen-loading { display: none; }
+
+  /* Refresh indicator */
+  #refresh-bar {
+    position: absolute;
+    bottom: 80px; left: 16px;
+    font-size: 9px;
+    color: rgba(0,255,157,0.4);
+    letter-spacing: 1px;
+  }
+  #refresh-progress {
+    height: 2px;
+    background: rgba(0,255,157,0.2);
+    margin-top: 4px;
+    width: 120px;
+    position: relative;
+    overflow: hidden;
+  }
+  #refresh-fill {
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    background: var(--green);
+    transition: width 1s linear;
+  }
+
+  /* Orientation warning */
+  #orient-warn {
+    position: absolute;
+    top: 115px; left: 50%;
+    transform: translateX(-50%);
+    font-size: 9px;
+    color: var(--red);
+    letter-spacing: 1px;
+    display: none;
+    text-align: center;
+  }
+
+  /* Debug panel */
+  #debug {
+    position: absolute;
+    bottom: 80px; right: 12px;
+    font-size: 8px;
+    color: rgba(0,255,157,0.3);
+    line-height: 1.8;
+    text-align: right;
+    display: none;
+  }
+</style>
+</head>
+<body>
+
+<!-- Permission screen -->
+<div id="screen-perm">
+  <div class="screen-icon">✈</div>
+  <div class="screen-title">FLIGHT AR</div>
+  <div class="screen-body">
+    Usmeri kameru ka nebu i identifikuj letove u realnom vremenu.<br><br>
+    Potreban pristup kameri, lokaciji i senzorima orijentacije.
+  </div>
+  <button class="btn" id="btn-start">POKRENI</button>
+</div>
+
+<!-- Loading screen -->
+<div id="screen-loading">
+  <div class="spinner"></div>
+  <div class="screen-title" style="font-size:16px">INICIJALIZACIJA</div>
+  <div id="loading-msg" class="screen-body" style="font-size:10px">Pokretanje kamere...</div>
+</div>
+
+<!-- Camera -->
+<video id="camera-view" autoplay playsinline muted></video>
+
+<!-- AR Overlay -->
+<div id="overlay">
+  <div id="crosshair">
+    <div class="ch-corner ch-tl"></div>
+    <div class="ch-corner ch-tr"></div>
+    <div class="ch-corner ch-bl"></div>
+    <div class="ch-corner ch-br"></div>
+  </div>
+
+  <div id="hud-top">
+    <div id="hud-title">FLIGHT AR</div>
+    <div id="hud-status">
+      LOC <span id="stat-loc">--</span><br>
+      HDG <span id="stat-hdg">---°</span><br>
+      FLT <span id="stat-flt">0</span>
+    </div>
+  </div>
+
+  <div id="compass-wrap">
+    <div id="compass-tape"></div>
+    <div id="compass-center-marker"></div>
+  </div>
+  <div id="azimuth-readout">AZ ---° | EL --°</div>
+
+  <div id="orient-warn">⚠ ORIJENTACIJA NEDOSTUPNA — koristim simulirani heading</div>
+
+  <div id="horizon"></div>
+
+  <div id="elev-scale">
+    <div>+60°</div>
+    <div>+45°</div>
+    <div>+30°</div>
+    <div>+15°</div>
+    <div>0°</div>
+    <div>-15°</div>
+  </div>
+
+  <div id="hud-bottom">
+    <div class="metric">
+      <div class="metric-label">Vidljivi letovi</div>
+      <div class="metric-value" id="m-visible">0</div>
+    </div>
+    <div class="metric" style="text-align:center">
+      <div class="metric-label">Najbliži</div>
+      <div class="metric-value" id="m-closest">---</div>
+    </div>
+    <div class="metric" style="text-align:right">
+      <div class="metric-label">Radius</div>
+      <div class="metric-value" id="m-radius">50km</div>
+    </div>
+  </div>
+
+  <div id="refresh-bar">
+    OPENSKY REFRESH
+    <div id="refresh-progress"><div id="refresh-fill" style="width:0%"></div></div>
+  </div>
+
+  <div id="debug"></div>
+</div>
+
+<div id="scanlines"></div>
+<div id="vignette"></div>
+
+<script>
+// ─── Constants ───────────────────────────────────────────────────────────────
+const FETCH_INTERVAL = 15000; // 15s OpenSky rate limit friendly
+const SEARCH_RADIUS_KM = 80;
+const FOV_H = 60; // degrees horizontal FOV
+const FOV_V = 45; // degrees vertical FOV
+const SMOOTHING = 0.12; // orientation smoothing factor (lower = smoother)
+const CORS_PROXY = 'https://corsproxy.io/?'; // fallback CORS proxy
+
+// ─── State ───────────────────────────────────────────────────────────────────
+let state = {
+  lat: null, lon: null,
+  azimuth: 0,    // heading 0-360 (smoothed)
+  elevation: 30, // tilt up/down
+  roll: 0,
+  rawAz: 0, rawEl: 30,
+  flights: [],
+  orientMode: 'none', // 'absolute', 'relative', 'none'
+  sensorAvailable: false,
+  lastFetch: 0,
+  fetchTimer: null,
+  refreshProgress: 0,
+  wakeLock: null,
+  selectedFlight: null,
+  corsProxyNeeded: false,
+};
+
+// ─── DOM refs ─────────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const overlay      = $('overlay');
+const compassTape  = $('compass-tape');
+const azReadout    = $('azimuth-readout');
+const statLoc      = $('stat-loc');
+const statHdg      = $('stat-hdg');
+const statFlt      = $('stat-flt');
+const mVisible     = $('m-visible');
+const mClosest     = $('m-closest');
+const refreshFill  = $('refresh-fill');
+const orientWarn   = $('orient-warn');
+const debugEl      = $('debug');
+
+// ─── UTILS ───────────────────────────────────────────────────────────────────
+const rad = d => d * Math.PI / 180;
+const deg = r => r * 180 / Math.PI;
+
+function angleDiff(a, b) {
+  // Signed angular difference -180..180
+  let d = ((b - a + 540) % 360) - 180;
+  return d;
+}
+
+function smoothAngle(current, target, factor) {
+  let diff = angleDiff(current, target);
+  return (current + diff * factor + 360) % 360;
+}
+
+function smoothValue(current, target, factor) {
+  return current + (target - current) * factor;
+}
+
+// Great circle bearing and distance
+function bearing(lat1, lon1, lat2, lon2) {
+  const φ1 = rad(lat1), φ2 = rad(lat2);
+  const Δλ = rad(lon2 - lon1);
+  const y = Math.sin(Δλ) * Math.cos(φ2);
+  const x = Math.cos(φ1)*Math.sin(φ2) - Math.sin(φ1)*Math.cos(φ2)*Math.cos(Δλ);
+  return (deg(Math.atan2(y, x)) + 360) % 360;
+}
+
+function distanceKm(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = rad(lat2 - lat1);
+  const dLon = rad(lon2 - lon1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+// Elevation angle to aircraft
+function elevationAngle(myLat, myLon, acLat, acLon, acAltM) {
+  const dist = distanceKm(myLat, myLon, acLat, acLon) * 1000; // meters
+  if (dist < 1) return 90;
+  return deg(Math.atan2(acAltM, dist));
+}
+
+// ─── Compass tape builder ─────────────────────────────────────────────────────
+(function buildCompassTape() {
+  const labels = {0:'N',45:'NE',90:'E',135:'SE',180:'S',225:'SW',270:'W',315:'NW',360:'N'};
+  let html = '';
+  for (let a = -360; a <= 720; a += 5) {
+    const norm = ((a % 360) + 360) % 360;
+    if (norm % 45 === 0) {
+      html += `<span class="major" style="margin:0 8px">${labels[norm]||norm}</span>`;
+    } else if (norm % 15 === 0) {
+      html += `<span style="margin:0 5px">${norm}</span>`;
+    } else {
+      html += `<span style="margin:0 3px;opacity:0.3">·</span>`;
+    }
+  }
+  compassTape.innerHTML = html;
+})();
+
+function updateCompass() {
+  const az = state.azimuth;
+  const pxPerDeg = 5.5;
+  const offset = -az * pxPerDeg;
+  compassTape.style.transform = `translateX(calc(-50% + ${offset}px))`;
+  statHdg.textContent = az.toFixed(0).padStart(3,'0') + '°';
+  azReadout.textContent = `AZ ${az.toFixed(1)}° | EL ${state.elevation.toFixed(1)}°`;
+}
+
+// ─── ORIENTATION ─────────────────────────────────────────────────────────────
+function initOrientation() {
+  // Try AbsoluteOrientationSensor first (Chrome Android)
+  if ('AbsoluteOrientationSensor' in window) {
+    try {
+      const sensor = new AbsoluteOrientationSensor({ frequency: 30, referenceFrame: 'screen' });
+      sensor.addEventListener('reading', () => {
+        const [x, y, z, w] = sensor.quaternion;
+        const az  = (deg(Math.atan2(2*(w*z + x*y), 1 - 2*(y*y + z*z))) + 360) % 360;
+        const el  = deg(Math.asin(Math.max(-1, Math.min(1, 2*(w*y - z*x)))));
+        state.rawAz = az;
+        state.rawEl = el;
+        state.sensorAvailable = true;
+        state.orientMode = 'absolute';
+      });
+      sensor.addEventListener('error', () => fallbackOrientation());
+      Promise.all([
+        navigator.permissions.query({ name: 'accelerometer' }),
+        navigator.permissions.query({ name: 'magnetometer' }),
+        navigator.permissions.query({ name: 'gyroscope' }),
+      ]).then(results => {
+        if (results.every(r => r.state !== 'denied')) {
+          sensor.start();
+        } else fallbackOrientation();
+      }).catch(() => fallbackOrientation());
+      return;
+    } catch(e) { /* fall through */ }
+  }
+  fallbackOrientation();
+}
+
+function fallbackOrientation() {
+  // deviceorientationabsolute first, then deviceorientation
+  const handler = (e) => {
+    let az, el;
+    if (e.absolute || e.type === 'deviceorientationabsolute') {
+      // alpha = compass heading in some browsers (0=North on Android)
+      // On iOS: alpha is arbitrary, webkitCompassHeading is True North
+      if (e.webkitCompassHeading !== undefined && e.webkitCompassHeading !== null) {
+        az = e.webkitCompassHeading; // iOS — already 0=N
+      } else if (e.alpha !== null) {
+        az = (360 - e.alpha + 360) % 360; // Android absolute
+      } else {
+        return;
+      }
+      // beta: -180 to 180, 90=phone flat face up, 0=phone vertical portrait
+      // When holding phone like a camera pointing at sky: beta goes positive
+      // elevation = beta - 90 (portrait) gives approx elevation above horizon
+      const beta = e.beta !== null ? e.beta : 0;
+      el = beta - 90;
+      // Clamp
+      el = Math.max(-90, Math.min(90, el));
+      state.rawAz = az;
+      state.rawEl = el;
+      state.sensorAvailable = true;
+      state.orientMode = 'absolute';
+    } else {
+      // Non-absolute — heading relative, less useful but better than nothing
+      if (e.webkitCompassHeading !== undefined && e.webkitCompassHeading !== null) {
+        az = e.webkitCompassHeading;
+        const beta = e.beta !== null ? e.beta : 0;
+        el = beta - 90;
+        state.rawAz = az;
+        state.rawEl = Math.max(-90, Math.min(90, el));
+        state.sensorAvailable = true;
+        state.orientMode = 'absolute';
+      } else {
+        state.orientMode = 'relative';
+        orientWarn.style.display = 'block';
+      }
+    }
+  };
+
+  if ('ondeviceorientationabsolute' in window) {
+    window.addEventListener('deviceorientationabsolute', handler, true);
+  }
+  window.addEventListener('deviceorientation', handler, true);
+
+  // iOS 13+ permission
+  if (typeof DeviceOrientationEvent !== 'undefined' &&
+      typeof DeviceOrientationEvent.requestPermission === 'function') {
+    DeviceOrientationEvent.requestPermission().then(r => {
+      if (r !== 'granted') {
+        orientWarn.style.display = 'block';
+        state.orientMode = 'none';
+      }
+    }).catch(() => { orientWarn.style.display = 'block'; });
+  }
+}
+
+// ─── GEOLOCATION ─────────────────────────────────────────────────────────────
+function initLocation() {
+  return new Promise((resolve, reject) => {
+    navigator.geolocation.watchPosition(
+      pos => {
+        state.lat = pos.coords.latitude;
+        state.lon = pos.coords.longitude;
+        statLoc.textContent = 'OK';
+        resolve();
+      },
+      err => {
+        statLoc.textContent = 'ERR';
+        // Demo fallback: Belgrade
+        state.lat = 44.787; state.lon = 20.457;
+        statLoc.textContent = 'DEMO';
+        resolve();
+      },
+      { enableHighAccuracy: true, maximumAge: 5000 }
+    );
+  });
+}
+
+// ─── OPENSKY ─────────────────────────────────────────────────────────────────
+async function fetchFlights() {
+  if (!state.lat) return;
+  const delta = (SEARCH_RADIUS_KM / 111);
+  const lamin = state.lat - delta, lamax = state.lat + delta;
+  const lomin = state.lon - delta, lomax = state.lon + delta;
+  const baseUrl = `https://opensky-network.org/api/states/all?lamin=${lamin}&lomin=${lomin}&lamax=${lamax}&lomax=${lomax}`;
+
+  try {
+    let res;
+    if (state.corsProxyNeeded) {
+      res = await fetch(CORS_PROXY + encodeURIComponent(baseUrl));
+    } else {
+      try {
+        res = await fetch(baseUrl);
+      } catch(corsErr) {
+        // Direct fetch failed (likely CORS), retry with proxy
+        console.warn('Direct fetch failed, trying CORS proxy...');
+        state.corsProxyNeeded = true;
+        res = await fetch(CORS_PROXY + encodeURIComponent(baseUrl));
+      }
+    }
+    if (!res.ok) throw new Error(res.status);
+    const data = await res.json();
+    const now = Date.now() / 1000;
+
+    if (data.states) {
+      state.flights = data.states
+        .filter(s => s[5] && s[6] && s[7] > 100) // has position + altitude
+        .map(s => ({
+          icao:     s[0],
+          callsign: (s[1] || '').trim() || s[0],
+          lon:      s[5],
+          lat:      s[6],
+          altM:     s[7],
+          velMs:    s[9],
+          hdg:      s[10],
+          dist:     distanceKm(state.lat, state.lon, s[6], s[5]),
+          bearing:  bearing(state.lat, state.lon, s[6], s[5]),
+          elev:     elevationAngle(state.lat, state.lon, s[6], s[5], s[7]),
+          age:      now - (s[4] || now),
+        }))
+        .filter(f => f.dist <= SEARCH_RADIUS_KM)
+        .sort((a, b) => a.dist - b.dist);
+
+      statFlt.textContent = state.flights.length;
+      const closest = state.flights[0];
+      mVisible.textContent = state.flights.length;
+      mClosest.textContent = closest ? closest.callsign.substring(0,7) : '---';
+    }
+  } catch(e) {
+    console.warn('OpenSky fetch error:', e);
+    // On CORS or network error, show demo data
+    if (state.flights.length === 0) injectDemoFlights();
+  }
+
+  state.lastFetch = Date.now();
+  scheduleRefreshBar();
+}
+
+function injectDemoFlights() {
+  // Demo flights around current location for testing UI
+  const offsets = [
+    { cs: 'DAN123', dLat: 0.3, dLon: 0.5, alt: 9500, hdg: 270 },
+    { cs: 'AFR442', dLat: -0.1, dLon: 0.8, alt: 11000, hdg: 90 },
+    { cs: 'TUR71',  dLat: 0.6, dLon: -0.2, alt: 7500, hdg: 180 },
+  ];
+  state.flights = offsets.map(o => {
+    const fLat = state.lat + o.dLat;
+    const fLon = state.lon + o.dLon;
+    return {
+      icao: o.cs.toLowerCase(),
+      callsign: o.cs,
+      lat: fLat, lon: fLon,
+      altM: o.alt, velMs: 230, hdg: o.hdg,
+      dist: distanceKm(state.lat, state.lon, fLat, fLon),
+      bearing: bearing(state.lat, state.lon, fLat, fLon),
+      elev: elevationAngle(state.lat, state.lon, fLat, fLon, o.alt),
+      age: 2,
+    };
+  });
+  statFlt.textContent = state.flights.length + ' (DEMO)';
+}
+
+let refreshInterval = null;
+function scheduleRefreshBar() {
+  let elapsed = 0;
+  if (refreshInterval) clearInterval(refreshInterval);
+  refreshFill.style.width = '0%';
+  refreshInterval = setInterval(() => {
+    elapsed += 1000;
+    refreshFill.style.width = Math.min(100, (elapsed / FETCH_INTERVAL) * 100) + '%';
+    if (elapsed >= FETCH_INTERVAL) {
+      clearInterval(refreshInterval);
+      fetchFlights();
+    }
+  }, 1000);
+}
+
+// ─── PROJECTION: world → screen ──────────────────────────────────────────────
+function projectToScreen(flightBearing, flightElevation) {
+  const W = window.innerWidth;
+  const H = window.innerHeight;
+
+  // Angular difference from current heading
+  const dAz = angleDiff(state.azimuth, flightBearing); // positive = right of center
+  const dEl = flightElevation - state.elevation;       // positive = above center
+
+  // Map to screen pixel
+  // FOV_H degrees spans full width
+  const pxPerDegH = W / FOV_H;
+  const pxPerDegV = H / FOV_V;
+
+  const x = W / 2 + dAz * pxPerDegH;
+  const y = H / 2 - dEl * pxPerDegV; // invert Y: up = negative pixel direction
+
+  // Only show if within screen + margin
+  const margin = 60;
+  const visible = x > -margin && x < W + margin && y > -margin && y < H + margin;
+  return { x, y, dAz, dEl, visible };
+}
+
+// ─── RENDER LOOP ─────────────────────────────────────────────────────────────
+let animId = null;
+
+function getOrCreateLabel(id) {
+  let el = document.getElementById('fl-' + id);
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'fl-' + id;
+    el.className = 'flight-label';
+    el.innerHTML = `
+      <div class="flight-dot"></div>
+      <div class="flight-card">
+        <div class="flight-callsign"></div>
+        <div class="flight-info"></div>
+      </div>
+      <div class="flight-delta"></div>
+    `;
+    el.addEventListener('click', () => {
+      document.querySelectorAll('.flight-label.selected').forEach(s => s.classList.remove('selected'));
+      el.classList.toggle('selected');
+      state.selectedFlight = el.classList.contains('selected') ? id : null;
+    });
+    overlay.appendChild(el);
+  }
+  return el;
+}
+
+function cleanupLabels(activeIds) {
+  document.querySelectorAll('.flight-label').forEach(el => {
+    const id = el.id.replace('fl-', '');
+    if (!activeIds.has(id)) el.remove();
+  });
+}
+
+function renderFrame() {
+  // Smooth orientation
+  state.azimuth  = smoothAngle(state.azimuth, state.rawAz, SMOOTHING);
+  state.elevation = smoothValue(state.elevation, state.rawEl, SMOOTHING);
+
+  updateCompass();
+
+  // Move horizon with phone tilt
+  const horizonEl = $('horizon');
+  const pxPerDegV = window.innerHeight / FOV_V;
+  const horizonOffset = state.elevation * pxPerDegV; // elevation=0 → horizon at center
+  horizonEl.style.top = `calc(50% + ${horizonOffset}px)`;
+
+  const activeIds = new Set();
+
+  state.flights.forEach(f => {
+    const proj = projectToScreen(f.bearing, f.elev);
+    activeIds.add(f.icao);
+
+    if (!proj.visible) return;
+
+    const el = getOrCreateLabel(f.icao);
+    el.style.left = proj.x + 'px';
+    el.style.top  = proj.y + 'px';
+
+    const dot = el.querySelector('.flight-dot');
+    dot.className = 'flight-dot' + (f.dist < 15 ? ' close' : f.dist > 50 ? ' far' : '');
+
+    const cs = el.querySelector('.flight-callsign');
+    cs.textContent = f.callsign;
+
+    const info = el.querySelector('.flight-info');
+    info.innerHTML =
+      `<b>${(f.altM/1000).toFixed(1)}km</b> alt · <b>${Math.round(f.dist)}km</b> dist<br>` +
+      `<b>${Math.round((f.velMs||0)*3.6)}km/h</b> · HDG <b>${Math.round(f.hdg||0)}°</b>`;
+
+    const delta = el.querySelector('.flight-delta');
+    const angDist = Math.sqrt(proj.dAz**2 + proj.dEl**2);
+    if (angDist < 5) {
+      delta.textContent = '◎ U VIDOKRUGU';
+      delta.className = 'flight-delta near';
+    } else {
+      delta.textContent = `${angDist.toFixed(1)}° od centra`;
+      delta.className = 'flight-delta';
+    }
+  });
+
+  cleanupLabels(activeIds);
+
+  // Debug
+  if (false) { // set true to enable
+    debugEl.style.display = 'block';
+    debugEl.innerHTML =
+      `rawAz: ${state.rawAz.toFixed(1)}<br>` +
+      `rawEl: ${state.rawEl.toFixed(1)}<br>` +
+      `mode: ${state.orientMode}<br>` +
+      `flights: ${state.flights.length}`;
+  }
+
+  animId = requestAnimationFrame(renderFrame);
+}
+
+// ─── WAKE LOCK ───────────────────────────────────────────────────────────────
+async function acquireWakeLock() {
+  if ('wakeLock' in navigator) {
+    try {
+      state.wakeLock = await navigator.wakeLock.request('screen');
+      state.wakeLock.addEventListener('release', () => { state.wakeLock = null; });
+      document.addEventListener('visibilitychange', async () => {
+        if (document.visibilityState === 'visible' && !state.wakeLock) {
+          try { state.wakeLock = await navigator.wakeLock.request('screen'); } catch(e) {}
+        }
+      });
+    } catch(e) { console.warn('Wake Lock not available:', e); }
+  }
+}
+
+// ─── STARTUP ─────────────────────────────────────────────────────────────────
+async function start() {
+  $('screen-perm').style.display = 'none';
+  $('screen-loading').style.display = 'flex';
+
+  const msg = $('loading-msg');
+
+  // 1. Camera
+  msg.textContent = 'Pokretanje kamere...';
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 } },
+      audio: false
+    });
+    $('camera-view').srcObject = stream;
+  } catch(e) {
+    msg.textContent = '⚠ Kamera nije dostupna. Nastavljam bez nje.';
+    await new Promise(r => setTimeout(r, 1500));
+  }
+
+  // 2. Location
+  msg.textContent = 'Određivanje lokacije...';
+  await initLocation();
+
+  // 3. Orientation
+  msg.textContent = 'Inicijalizacija senzora...';
+  initOrientation();
+  await new Promise(r => setTimeout(r, 800));
+
+  // 4. Flights
+  msg.textContent = 'Preuzimanje podataka o letovima...';
+  await fetchFlights();
+
+  // 5. Wake lock — prevent screen from sleeping
+  acquireWakeLock();
+
+  // 6. Go!
+  $('screen-loading').style.display = 'none';
+  renderFrame();
+}
+
+$('btn-start').addEventListener('click', start);
+</script>
+</body>
+</html>
