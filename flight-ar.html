@@ -224,7 +224,6 @@
     transform: translate(-50%, -50%);
     pointer-events: auto;
     z-index: 20;
-    transition: left 0.15s ease-out, top 0.15s ease-out;
     cursor: pointer;
   }
   .flight-label.selected .flight-card {
@@ -476,7 +475,7 @@ const FETCH_INTERVAL = 15000; // 15s OpenSky rate limit friendly
 const SEARCH_RADIUS_KM = 80;
 const FOV_H = 60; // degrees horizontal FOV
 const FOV_V = 45; // degrees vertical FOV
-const SMOOTHING = 0.12; // orientation smoothing factor (lower = smoother)
+const SMOOTHING = 0.08; // orientation smoothing factor (lower = smoother)
 const CORS_PROXY = 'https://corsproxy.io/?'; // fallback CORS proxy
 
 // ─── State ───────────────────────────────────────────────────────────────────
