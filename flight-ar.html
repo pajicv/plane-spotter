@@ -588,7 +588,9 @@ function initOrientation() {
       const sensor = new AbsoluteOrientationSensor({ frequency: 30, referenceFrame: 'screen' });
       sensor.addEventListener('reading', () => {
         const [x, y, z, w] = sensor.quaternion;
-        const az  = (deg(Math.atan2(2*(w*z + x*y), 1 - 2*(y*y + z*z))) + 360) % 360;
+        // ENU frame: yaw 0°=East, CCW positive. Convert to compass: 0°=North, CW.
+        const yaw = deg(Math.atan2(2*(w*z + x*y), 1 - 2*(y*y + z*z)));
+        const az  = (90 - yaw + 360) % 360;
         const el  = deg(Math.asin(Math.max(-1, Math.min(1, 2*(w*y - z*x)))));
         state.rawAz = az;
         state.rawEl = el;
@@ -621,7 +623,8 @@ function fallbackOrientation() {
       if (e.webkitCompassHeading !== undefined && e.webkitCompassHeading !== null) {
         az = e.webkitCompassHeading; // iOS — already 0=N
       } else if (e.alpha !== null) {
-        az = (360 - e.alpha + 360) % 360; // Android absolute
+        // Android absolute: alpha is compass heading CW from North on modern Chrome
+        az = e.alpha;
       } else {
         return;
       }
@@ -898,7 +901,7 @@ function renderFrame() {
   cleanupLabels(activeIds);
 
   // Debug
-  if (false) { // set true to enable
+  if (true) { // debug — verify heading
     debugEl.style.display = 'block';
     debugEl.innerHTML =
       `rawAz: ${state.rawAz.toFixed(1)}<br>` +
