@@ -27,10 +27,6 @@ data class AircraftDto(
 ) {
     val altitudeFeet: Int?
         get() = alt_geom ?: try {
-            alt_baro?.let {
-                kotlinx.serialization.json.Json.decodeFromJsonElement(
-                    kotlinx.serialization.builtins.serializer<Int>(), it
-                )
-            }
+            (alt_baro as? kotlinx.serialization.json.JsonPrimitive)?.content?.toIntOrNull()
         } catch (_: Exception) { null }
 }
