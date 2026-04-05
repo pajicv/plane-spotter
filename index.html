@@ -586,7 +586,7 @@ function initOrientation() {
   // Try AbsoluteOrientationSensor first (Chrome Android)
   if ('AbsoluteOrientationSensor' in window) {
     try {
-      const sensor = new AbsoluteOrientationSensor({ frequency: 30, referenceFrame: 'device' });
+      const sensor = new AbsoluteOrientationSensor({ frequency: 30, referenceFrame: 'screen' });
       sensor.addEventListener('reading', () => {
         const [x, y, z, w] = sensor.quaternion;
         // Build rotation matrix: transforms device coords → world ENU coords
