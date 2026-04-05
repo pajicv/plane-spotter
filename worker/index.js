@@ -7,25 +7,30 @@ let tokenExpiry = 0;
 async function getToken(env) {
   if (cachedToken && Date.now() < tokenExpiry - 30000) return cachedToken;
 
-  const res = await fetch(TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'client_credentials',
-      client_id: env.OPENSKY_CLIENT_ID,
-      client_secret: env.OPENSKY_CLIENT_SECRET,
-    }),
-  });
+  try {
+    const res = await fetch(TOKEN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'client_credentials',
+        client_id: env.OPENSKY_CLIENT_ID,
+        client_secret: env.OPENSKY_CLIENT_SECRET,
+      }),
+    });
 
-  if (!res.ok) {
-    console.error('Token fetch failed:', res.status);
+    if (!res.ok) {
+      console.error('Token fetch failed:', res.status);
+      return null;
+    }
+
+    const data = await res.json();
+    cachedToken = data.access_token;
+    tokenExpiry = Date.now() + data.expires_in * 1000;
+    return cachedToken;
+  } catch (e) {
+    console.error('Token fetch error:', e);
     return null;
   }
-
-  const data = await res.json();
-  cachedToken = data.access_token;
-  tokenExpiry = Date.now() + data.expires_in * 1000;
-  return cachedToken;
 }
 
 function corsHeaders(env) {
@@ -53,26 +58,18 @@ export default {
     // Forward query params to OpenSky
     const apiUrl = API_BASE + url.search;
 
-    const fetchOpts = {};
+    // Try authenticated first, fall back to unauthenticated
     const token = await getToken(env);
-    if (token) {
-      fetchOpts.headers = { 'Authorization': 'Bearer ' + token };
-    }
+    const fetchOpts = token
+      ? { headers: { 'Authorization': 'Bearer ' + token } }
+      : {};
 
-    const res = await fetch(apiUrl, fetchOpts);
+    let res = await fetch(apiUrl, fetchOpts);
 
-    // Retry once with fresh token on 401
-    if (res.status === 401 && token) {
+    // On 401, retry unauthenticated
+    if (res.status === 401) {
       cachedToken = null;
-      const newToken = await getToken(env);
-      if (newToken) {
-        fetchOpts.headers = { 'Authorization': 'Bearer ' + newToken };
-        const retry = await fetch(apiUrl, fetchOpts);
-        return new Response(retry.body, {
-          status: retry.status,
-          headers: { ...Object.fromEntries(retry.headers), ...corsHeaders(env) },
-        });
-      }
+      res = await fetch(apiUrl);
     }
 
     return new Response(res.body, {
