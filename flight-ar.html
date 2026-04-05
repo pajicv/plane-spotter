@@ -712,20 +712,25 @@ async function ensureAccessToken() {
     client_secret: OPENSKY_CLIENT_SECRET,
   });
   const opts = { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body };
-  let res;
-  if (!state.corsProxyNeeded) {
-    try {
-      res = await fetch(tokenUrl, opts);
-      if (!res.ok) { state.corsProxyNeeded = true; res = null; }
-    } catch(e) { state.corsProxyNeeded = true; }
+  try {
+    let res;
+    if (!state.corsProxyNeeded) {
+      try {
+        res = await fetch(tokenUrl, opts);
+        if (!res.ok) { state.corsProxyNeeded = true; res = null; }
+      } catch(e) { state.corsProxyNeeded = true; }
+    }
+    if (!res) {
+      res = await fetch(CORS_PROXY + encodeURIComponent(tokenUrl), opts);
+    }
+    if (!res.ok) throw new Error(res.status);
+    const data = await res.json();
+    state.accessToken = data.access_token;
+    state.tokenExpiry = Date.now() + data.expires_in * 1000;
+  } catch(e) {
+    console.warn('OAuth token failed, falling back to unauthenticated:', e);
+    state.accessToken = null;
   }
-  if (!res) {
-    res = await fetch(CORS_PROXY + encodeURIComponent(tokenUrl), opts);
-  }
-  if (!res.ok) throw new Error('Token request failed: ' + res.status);
-  const data = await res.json();
-  state.accessToken = data.access_token;
-  state.tokenExpiry = Date.now() + data.expires_in * 1000;
 }
 
 async function fetchFlights() {
