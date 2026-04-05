@@ -459,7 +459,7 @@
   </div>
 
   <div id="refresh-bar">
-    OPENSKY REFRESH
+    ADSB REFRESH
     <div id="refresh-progress"><div id="refresh-fill" style="width:0%"></div></div>
   </div>
 
@@ -471,12 +471,12 @@
 
 <script>
 // ─── Constants ───────────────────────────────────────────────────────────────
-const FETCH_INTERVAL = 15000; // 15s OpenSky rate limit friendly
+const FETCH_INTERVAL = 10000; // 10s refresh
 const SEARCH_RADIUS_KM = 100;
 const FOV_H = 60; // degrees horizontal FOV
 const FOV_V = 45; // degrees vertical FOV
 const SMOOTHING = 0.08; // orientation smoothing factor (lower = smoother)
-const OPENSKY_PROXY = 'https://opensky-proxy.pajicv.workers.dev/states';
+const ADSB_API = 'https://api.adsb.lol/v2';
 
 // ─── State ───────────────────────────────────────────────────────────────────
 let state = {
@@ -493,7 +493,6 @@ let state = {
   refreshProgress: 0,
   wakeLock: null,
   selectedFlight: null,
-  corsProxyNeeded: false,
 };
 
 // ─── DOM refs ─────────────────────────────────────────────────────────────────
@@ -694,36 +693,34 @@ function initLocation() {
   });
 }
 
-// ─── OPENSKY ─────────────────────────────────────────────────────────────────
+// ─── FLIGHT DATA (adsb.lol) ──────────────────────────────────────────────────
 async function fetchFlights() {
   if (!state.lat) return;
-  const delta = (SEARCH_RADIUS_KM / 111);
-  const lamin = state.lat - delta, lamax = state.lat + delta;
-  const lomin = state.lon - delta, lomax = state.lon + delta;
 
   try {
-    const res = await fetch(`${OPENSKY_PROXY}?lamin=${lamin}&lomin=${lomin}&lamax=${lamax}&lomax=${lomax}`);
+    const res = await fetch(`${ADSB_API}/lat/${state.lat}/lon/${state.lon}/dist/${SEARCH_RADIUS_KM}`);
     if (!res.ok) throw new Error(res.status);
     const data = await res.json();
-    const now = Date.now() / 1000;
 
-    if (data.states) {
-      state.flights = data.states
-        .filter(s => s[5] && s[6] && s[7] > 100) // has position + altitude
-        .map(s => ({
-          icao:     s[0],
-          callsign: (s[1] || '').trim() || s[0],
-          lon:      s[5],
-          lat:      s[6],
-          altM:     s[7],
-          velMs:    s[9],
-          hdg:      s[10],
-          dist:     distanceKm(state.lat, state.lon, s[6], s[5]),
-          bearing:  bearing(state.lat, state.lon, s[6], s[5]),
-          elev:     elevationAngle(state.lat, state.lon, s[6], s[5], s[7]),
-          age:      now - (s[4] || now),
-        }))
-        .filter(f => f.dist <= SEARCH_RADIUS_KM)
+    if (data.ac) {
+      state.flights = data.ac
+        .filter(a => a.lat && a.lon && (a.alt_geom || a.alt_baro) && (a.alt_geom || a.alt_baro) > 100)
+        .map(a => {
+          const altM = (a.alt_geom || a.alt_baro) * 0.3048; // feet → meters
+          return {
+            icao:     a.hex,
+            callsign: (a.flight || '').trim() || a.hex,
+            lon:      a.lon,
+            lat:      a.lat,
+            altM,
+            velMs:    a.gs ? a.gs * 0.514444 : 0, // knots → m/s
+            hdg:      a.track || a.true_heading || 0,
+            dist:     a.dst ? a.dst * 1.852 : distanceKm(state.lat, state.lon, a.lat, a.lon), // nm → km
+            bearing:  a.dir != null ? a.dir : bearing(state.lat, state.lon, a.lat, a.lon),
+            elev:     elevationAngle(state.lat, state.lon, a.lat, a.lon, altM),
+            age:      a.seen || 0,
+          };
+        })
         .sort((a, b) => a.dist - b.dist);
 
       statFlt.textContent = state.flights.length;
@@ -732,8 +729,7 @@ async function fetchFlights() {
       mClosest.textContent = closest ? closest.callsign.substring(0,7) : '---';
     }
   } catch(e) {
-    console.warn('OpenSky fetch error:', e);
-    // On CORS or network error, show demo data
+    console.warn('Flight data fetch error:', e);
     if (state.flights.length === 0) injectDemoFlights();
   }
 
