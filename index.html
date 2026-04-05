@@ -619,20 +619,24 @@ function fallbackOrientation() {
   const handler = (e) => {
     let az, el;
     if (e.absolute || e.type === 'deviceorientationabsolute') {
-      // alpha = compass heading in some browsers (0=North on Android)
-      // On iOS: alpha is arbitrary, webkitCompassHeading is True North
-      if (e.webkitCompassHeading !== undefined && e.webkitCompassHeading !== null) {
-        az = e.webkitCompassHeading; // iOS — already 0=N
+      // deviceorientationabsolute is Android-only — use alpha directly
+      // webkitCompassHeading on Android is unreliable (compressed 180° range)
+      // Only fall back to webkitCompassHeading for regular deviceorientation (iOS)
+      if (e.type === 'deviceorientationabsolute' && e.alpha !== null) {
+        az = (360 - e.alpha) % 360; // alpha is CCW from North, convert to compass CW
+      } else if (e.webkitCompassHeading !== undefined && e.webkitCompassHeading !== null) {
+        az = e.webkitCompassHeading; // iOS — already 0=N, CW
       } else if (e.alpha !== null) {
-        az = e.alpha;
-        state._rawAlpha = e.alpha;
-        state._rawBeta = e.beta;
-        state._rawGamma = e.gamma;
-        state._evtType = e.type;
-        state._absolute = e.absolute;
+        az = (360 - e.alpha) % 360;
       } else {
         return;
       }
+      state._rawAlpha = e.alpha;
+      state._rawBeta = e.beta;
+      state._rawGamma = e.gamma;
+      state._evtType = e.type;
+      state._absolute = e.absolute;
+      state._webkit = e.webkitCompassHeading;
       // beta: -180 to 180, 90=phone flat face up, 0=phone vertical portrait
       // When holding phone like a camera pointing at sky: beta goes positive
       // elevation = beta - 90 (portrait) gives approx elevation above horizon
@@ -894,14 +898,13 @@ function renderFrame() {
     debugEl.style.display = 'block';
     debugEl.innerHTML =
       `evt: ${state._evtType||'?'}<br>` +
-      `absolute: ${state._absolute}<br>` +
+      `abs: ${state._absolute}<br>` +
+      `webkit: ${state._webkit}<br>` +
       `alpha: ${(state._rawAlpha||0).toFixed(1)}<br>` +
       `beta: ${(state._rawBeta||0).toFixed(1)}<br>` +
       `gamma: ${(state._rawGamma||0).toFixed(1)}<br>` +
       `az: ${state.rawAz.toFixed(1)}<br>` +
-      `el: ${state.rawEl.toFixed(1)}<br>` +
-      `mode: ${state.orientMode}<br>` +
-      `flights: ${state.flights.length}`;
+      `mode: ${state.orientMode}`;
   }
 
   animId = requestAnimationFrame(renderFrame);
