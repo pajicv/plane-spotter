@@ -586,15 +586,27 @@ function initOrientation() {
   // Try AbsoluteOrientationSensor first (Chrome Android)
   if ('AbsoluteOrientationSensor' in window) {
     try {
-      const sensor = new AbsoluteOrientationSensor({ frequency: 30, referenceFrame: 'screen' });
+      const sensor = new AbsoluteOrientationSensor({ frequency: 30, referenceFrame: 'device' });
       sensor.addEventListener('reading', () => {
         const [x, y, z, w] = sensor.quaternion;
-        // ENU frame: yaw 0°=East, CCW positive. Convert to compass: 0°=North, CW.
-        const yaw = deg(Math.atan2(2*(w*z + x*y), 1 - 2*(y*y + z*z)));
-        const az  = (90 - yaw + 360) % 360;
-        const el  = deg(Math.asin(Math.max(-1, Math.min(1, 2*(w*y - z*x)))));
+        // Device frame quaternion in ENU. Extract where the -Y axis (top of phone in portrait) points.
+        // When phone is held upright in portrait, -Y axis is the "look" direction.
+        // Project -Y through quaternion rotation to get world direction.
+        const yx = 2 * (x * y + w * z);
+        const yy = w * w - x * x + y * y - z * z;
+        const yz = 2 * (y * z - w * x);
+        // Compass heading: atan2 of East(yx) and North(yy) components
+        const az = (deg(Math.atan2(yx, yy)) + 360) % 360;
+        // Elevation: how much the look direction tilts up from horizontal
+        const el = deg(Math.asin(Math.max(-1, Math.min(1, -yz))));
         state.rawAz = az;
         state.rawEl = el;
+        state._rawAlpha = sensor.quaternion[0];
+        state._rawBeta = sensor.quaternion[1];
+        state._rawGamma = sensor.quaternion[2];
+        state._evtType = 'AbsOrientSensor';
+        state._absolute = true;
+        state._webkit = w.toFixed(2);
         state.sensorAvailable = true;
         state.orientMode = 'absolute';
       });
