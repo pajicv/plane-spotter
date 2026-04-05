@@ -476,7 +476,7 @@ const SEARCH_RADIUS_KM = 100;
 const FOV_H = 60; // degrees horizontal FOV
 const FOV_V = 45; // degrees vertical FOV
 const SMOOTHING = 0.08; // orientation smoothing factor (lower = smoother)
-const ADSB_API = 'https://api.adsb.lol/v2';
+const ADSB_API = 'https://plane-spotter-nine.vercel.app/api/states';
 
 // ─── State ───────────────────────────────────────────────────────────────────
 let state = {
@@ -698,7 +698,7 @@ async function fetchFlights() {
   if (!state.lat) return;
 
   try {
-    const res = await fetch(`${ADSB_API}/lat/${state.lat}/lon/${state.lon}/dist/${SEARCH_RADIUS_KM}`);
+    const res = await fetch(`${ADSB_API}?lat=${state.lat}&lon=${state.lon}&dist=${SEARCH_RADIUS_KM}`);
     if (!res.ok) throw new Error(res.status);
     const data = await res.json();
 
