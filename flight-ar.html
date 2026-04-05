@@ -711,12 +711,16 @@ async function ensureAccessToken() {
     client_id: OPENSKY_CLIENT_ID,
     client_secret: OPENSKY_CLIENT_SECRET,
   });
+  const opts = { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body };
   let res;
-  try {
-    res = await fetch(tokenUrl, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
-  } catch(e) {
-    // Token endpoint may need CORS proxy
-    res = await fetch(CORS_PROXY + encodeURIComponent(tokenUrl), { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+  if (!state.corsProxyNeeded) {
+    try {
+      res = await fetch(tokenUrl, opts);
+      if (!res.ok) { state.corsProxyNeeded = true; res = null; }
+    } catch(e) { state.corsProxyNeeded = true; }
+  }
+  if (!res) {
+    res = await fetch(CORS_PROXY + encodeURIComponent(tokenUrl), opts);
   }
   if (!res.ok) throw new Error('Token request failed: ' + res.status);
   const data = await res.json();
