@@ -589,24 +589,24 @@ function initOrientation() {
       const sensor = new AbsoluteOrientationSensor({ frequency: 30, referenceFrame: 'device' });
       sensor.addEventListener('reading', () => {
         const [x, y, z, w] = sensor.quaternion;
-        // Device frame quaternion in ENU. Extract where the -Y axis (top of phone in portrait) points.
-        // When phone is held upright in portrait, -Y axis is the "look" direction.
-        // Project -Y through quaternion rotation to get world direction.
-        const yx = 2 * (x * y + w * z);
-        const yy = w * w - x * x + y * y - z * z;
-        const yz = 2 * (y * z - w * x);
-        // Compass heading: atan2 of East(yx) and North(yy) components
-        const az = (deg(Math.atan2(yx, yy)) + 360) % 360;
-        // Elevation: how much the look direction tilts up from horizontal
-        const el = deg(Math.asin(Math.max(-1, Math.min(1, -yz))));
+        // Build rotation matrix: transforms device coords → world ENU coords
+        // R[row][col], world = R * device
+        // We need the -Z column of R (device -Z axis = camera look direction in world)
+        const lookEast  = -2 * (x * z + w * y);  // -R[0][2]
+        const lookNorth =  2 * (w * x - y * z);  // -R[1][2]
+        const lookUp    = -(1 - 2 * (x * x + y * y)); // -R[2][2]
+        // Compass heading from East/North components of look vector
+        const az = (deg(Math.atan2(lookEast, lookNorth)) + 360) % 360;
+        // Elevation above horizon
+        const el = deg(Math.asin(Math.max(-1, Math.min(1, lookUp))));
         state.rawAz = az;
         state.rawEl = el;
-        state._rawAlpha = sensor.quaternion[0];
-        state._rawBeta = sensor.quaternion[1];
-        state._rawGamma = sensor.quaternion[2];
+        state._rawAlpha = x.toFixed(3);
+        state._rawBeta = y.toFixed(3);
+        state._rawGamma = z.toFixed(3);
         state._evtType = 'AbsOrientSensor';
         state._absolute = true;
-        state._webkit = w.toFixed(2);
+        state._webkit = w.toFixed(3);
         state.sensorAvailable = true;
         state.orientMode = 'absolute';
       });
