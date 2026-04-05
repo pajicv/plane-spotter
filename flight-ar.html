@@ -476,12 +476,7 @@ const SEARCH_RADIUS_KM = 100;
 const FOV_H = 60; // degrees horizontal FOV
 const FOV_V = 45; // degrees vertical FOV
 const SMOOTHING = 0.08; // orientation smoothing factor (lower = smoother)
-const CORS_PROXY = 'https://corsproxy.io/?'; // fallback CORS proxy
-
-// ─── OpenSky OAuth2 (create API client at https://opensky-network.org) ───────
-const OPENSKY_CLIENT_ID = 'pajicv-api-client';
-const OPENSKY_CLIENT_SECRET = 'sS4mRIybPm8sRWYyYNBi7mWu39q8jCOX';
-const OPENSKY_TOKEN_URL = 'https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token';
+const OPENSKY_PROXY = 'https://opensky-proxy.pajicv.workers.dev/states';
 
 // ─── State ───────────────────────────────────────────────────────────────────
 let state = {
@@ -499,8 +494,6 @@ let state = {
   wakeLock: null,
   selectedFlight: null,
   corsProxyNeeded: false,
-  accessToken: null,
-  tokenExpiry: 0,
 };
 
 // ─── DOM refs ─────────────────────────────────────────────────────────────────
@@ -702,71 +695,14 @@ function initLocation() {
 }
 
 // ─── OPENSKY ─────────────────────────────────────────────────────────────────
-async function ensureAccessToken() {
-  if (!OPENSKY_CLIENT_ID || !OPENSKY_CLIENT_SECRET) return;
-  if (state.accessToken && Date.now() < state.tokenExpiry - 30000) return; // still valid
-  const tokenUrl = OPENSKY_TOKEN_URL;
-  const body = new URLSearchParams({
-    grant_type: 'client_credentials',
-    client_id: OPENSKY_CLIENT_ID,
-    client_secret: OPENSKY_CLIENT_SECRET,
-  });
-  const opts = { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body };
-  try {
-    let res;
-    if (!state.corsProxyNeeded) {
-      try {
-        res = await fetch(tokenUrl, opts);
-        if (!res.ok) { state.corsProxyNeeded = true; res = null; }
-      } catch(e) { state.corsProxyNeeded = true; }
-    }
-    if (!res) {
-      res = await fetch(CORS_PROXY + encodeURIComponent(tokenUrl), opts);
-    }
-    if (!res.ok) throw new Error(res.status);
-    const data = await res.json();
-    state.accessToken = data.access_token;
-    state.tokenExpiry = Date.now() + data.expires_in * 1000;
-  } catch(e) {
-    console.warn('OAuth token failed, falling back to unauthenticated:', e);
-    state.accessToken = null;
-  }
-}
-
 async function fetchFlights() {
   if (!state.lat) return;
   const delta = (SEARCH_RADIUS_KM / 111);
   const lamin = state.lat - delta, lamax = state.lat + delta;
   const lomin = state.lon - delta, lomax = state.lon + delta;
-  const baseUrl = `https://opensky-network.org/api/states/all?lamin=${lamin}&lomin=${lomin}&lamax=${lamax}&lomax=${lomax}`;
 
   try {
-    await ensureAccessToken();
-    const fetchOpts = {};
-    if (state.accessToken) {
-      fetchOpts.headers = { 'Authorization': 'Bearer ' + state.accessToken };
-    }
-    let res;
-    if (state.corsProxyNeeded) {
-      res = await fetch(CORS_PROXY + encodeURIComponent(baseUrl), fetchOpts);
-    } else {
-      try {
-        res = await fetch(baseUrl, fetchOpts);
-      } catch(corsErr) {
-        console.warn('Direct fetch failed, trying CORS proxy...');
-        state.corsProxyNeeded = true;
-        res = await fetch(CORS_PROXY + encodeURIComponent(baseUrl), fetchOpts);
-      }
-    }
-    // Retry once on 401 with a fresh token
-    if (res.status === 401 && OPENSKY_CLIENT_ID) {
-      state.accessToken = null;
-      await ensureAccessToken();
-      if (state.accessToken) fetchOpts.headers = { 'Authorization': 'Bearer ' + state.accessToken };
-      res = state.corsProxyNeeded
-        ? await fetch(CORS_PROXY + encodeURIComponent(baseUrl), fetchOpts)
-        : await fetch(baseUrl, fetchOpts);
-    }
+    const res = await fetch(`${OPENSKY_PROXY}?lamin=${lamin}&lomin=${lomin}&lamax=${lamax}&lomax=${lomax}`);
     if (!res.ok) throw new Error(res.status);
     const data = await res.json();
     const now = Date.now() / 1000;
