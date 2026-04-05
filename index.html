@@ -621,8 +621,8 @@ function fallbackOrientation() {
       if (e.webkitCompassHeading !== undefined && e.webkitCompassHeading !== null) {
         az = e.webkitCompassHeading; // iOS — already 0=N
       } else if (e.alpha !== null) {
-        // Android: alpha is in ENU frame (0=East), convert to compass (0=North)
-        az = (e.alpha + 90) % 360;
+        az = e.alpha;
+        state._rawAlpha = e.alpha; // debug
       } else {
         return;
       }
@@ -886,6 +886,7 @@ function renderFrame() {
   if (true) { // debug — verify heading
     debugEl.style.display = 'block';
     debugEl.innerHTML =
+      `rawAlpha: ${(state._rawAlpha||0).toFixed(1)}<br>` +
       `rawAz: ${state.rawAz.toFixed(1)}<br>` +
       `rawEl: ${state.rawEl.toFixed(1)}<br>` +
       `mode: ${state.orientMode}<br>` +
