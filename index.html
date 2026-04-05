@@ -374,12 +374,15 @@
   /* Debug panel */
   #debug {
     position: absolute;
-    bottom: 80px; right: 12px;
-    font-size: 8px;
-    color: rgba(0,255,157,0.3);
-    line-height: 1.8;
-    text-align: right;
+    top: 100px; left: 12px;
+    font-size: 16px;
+    color: var(--green);
+    line-height: 2;
+    text-align: left;
     display: none;
+    background: rgba(0,0,0,0.8);
+    padding: 12px;
+    z-index: 999;
   }
 </style>
 </head>
@@ -622,7 +625,11 @@ function fallbackOrientation() {
         az = e.webkitCompassHeading; // iOS — already 0=N
       } else if (e.alpha !== null) {
         az = e.alpha;
-        state._rawAlpha = e.alpha; // debug
+        state._rawAlpha = e.alpha;
+        state._rawBeta = e.beta;
+        state._rawGamma = e.gamma;
+        state._evtType = e.type;
+        state._absolute = e.absolute;
       } else {
         return;
       }
@@ -886,9 +893,13 @@ function renderFrame() {
   if (true) { // debug — verify heading
     debugEl.style.display = 'block';
     debugEl.innerHTML =
-      `rawAlpha: ${(state._rawAlpha||0).toFixed(1)}<br>` +
-      `rawAz: ${state.rawAz.toFixed(1)}<br>` +
-      `rawEl: ${state.rawEl.toFixed(1)}<br>` +
+      `evt: ${state._evtType||'?'}<br>` +
+      `absolute: ${state._absolute}<br>` +
+      `alpha: ${(state._rawAlpha||0).toFixed(1)}<br>` +
+      `beta: ${(state._rawBeta||0).toFixed(1)}<br>` +
+      `gamma: ${(state._rawGamma||0).toFixed(1)}<br>` +
+      `az: ${state.rawAz.toFixed(1)}<br>` +
+      `el: ${state.rawEl.toFixed(1)}<br>` +
       `mode: ${state.orientMode}<br>` +
       `flights: ${state.flights.length}`;
   }
